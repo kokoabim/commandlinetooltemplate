@@ -1,0 +1,20 @@
+{
+    "$schema": "http://json.schemastore.org/template",
+    "author": "Spencer James",
+    "identity": "Kokoabim.DotNetProjectTemplates.CommandLineTool",
+    "name": "Command Line Tool",
+    "shortName": "commandlinetool",
+    "classifications": [
+        "Common",
+        "Console",
+        "CommandLine",
+        "Tool",
+        "CLI"
+    ],
+    "tags": {
+        "language": "C#",
+        "type": "project"
+    },
+    "sourceName": "CommandLineToolTemplate",
+    "defaultName": "MyCommandLineTool"
+}

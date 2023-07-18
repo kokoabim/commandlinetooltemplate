@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": ".NET Launch (console)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/CommandLineToolTemplate/bin/Debug/net7.0/CommandLineToolTemplate.dll",
+            "args": "${input:args}",
+            "cwd": "${workspaceFolder}/src/CommandLineToolTemplate",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": ".NET Attach",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "args",
+            "type": "promptString",
+            "description": "Command Line Arguments",
+            "default": ""
+        }
+    ]
+}
