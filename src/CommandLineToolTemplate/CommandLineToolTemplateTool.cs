@@ -6,7 +6,7 @@ internal class CommandLineToolTemplateTool : CommandLineTool
 {
     public CommandLineToolTemplateTool() : base("Top-Level Execution Tool")
     {
-        BottomHelpText = "\nCreated by Your Name — https://github.com/ — MIT License";
+        BottomHelpText = "Created by Your Name — https://github.com/ — MIT License";
         Version = "1.0";
     }
 

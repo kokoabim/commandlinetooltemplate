@@ -3,7 +3,10 @@ using Microsoft.Extensions.CommandLineUtils;
 
 namespace CommandLineTools;
 
-internal interface ICommandLineTool
+/// <summary>
+/// Command line tool.
+/// </summary>
+public interface ICommandLineTool
 {
     /// <summary>
     /// Runs command line tool (use in Program.cs).
@@ -18,7 +21,10 @@ internal interface ICommandLineTool
     Task<int> RunAsync(string[] args);
 }
 
-internal abstract class CommandLineTool : ICommandLineTool
+/// <summary>
+/// Command line tool.
+/// </summary>
+public abstract class CommandLineTool : ICommandLineTool
 {
     /// <summary>
     /// For a top-level execution tool, gets its arguments.
@@ -33,13 +39,17 @@ internal abstract class CommandLineTool : ICommandLineTool
         get => _bottomHelpText;
         set
         {
-            _bottomHelpText = !string.IsNullOrWhiteSpace(value)
-                ? (_useAnsiColors ? AnsiEscape.Apply(value, AnsiEscapeCode.Dim) : value)
-                : throw new ArgumentException("Property value is required.", nameof(BottomHelpText));
+            if (string.IsNullOrWhiteSpace(value)) return;
 
-            _tool.ExtendedHelpText = _bottomHelpText;
+            _bottomHelpText = _useAnsiColors ? AnsiEscape.Apply(value, AnsiEscapeCode.Dim) : value;
+            _tool.ExtendedHelpText = $"\n{_bottomHelpText}";
         }
     }
+
+    /// <summary>
+    /// Indicates whether to add an option (--opts-args) to, when used, show options and arguments and exit. Default is false.
+    /// </summary>
+    protected bool OptionsAndArgumentsOption { get; set; }
 
     /// <summary>
     /// For writing to standard error.
@@ -62,6 +72,11 @@ internal abstract class CommandLineTool : ICommandLineTool
     protected bool ShowHelpOnNoArguments { get; set; } = true;
 
     /// <summary>
+    /// If specified during instantiation, gets settings.
+    /// </summary>
+    protected CommandLineToolSettings Settings { get; } = CommandLineToolSettings.Empty;
+
+    /// <summary>
     /// Sets tool version shown after title at top of help. Optional.
     /// </summary>
     protected string? Version
@@ -69,21 +84,33 @@ internal abstract class CommandLineTool : ICommandLineTool
         get => _version;
         set
         {
-            _version = !string.IsNullOrWhiteSpace(value)
-                ? (_useAnsiColors ? AnsiEscape.Apply(value, AnsiEscapeCode.BrightBlack) : value)
-                : throw new ArgumentException("Property value is required.", nameof(Version));
+            if (string.IsNullOrWhiteSpace(value)) return;
 
-            _tool.VersionOption("--version", () => _version);
+            _version = _useAnsiColors ? AnsiEscape.Apply(value, AnsiEscapeCode.BrightBlack) : value;
         }
     }
 
     private readonly Dictionary<string, List<Argument>> _arguments = new();
     private string? _bottomHelpText;
+    private bool _initializationFinalized;
     private string _name;
     private string _title;
     private CommandLineApplication _tool;
     private bool _useAnsiColors = true;
     private string? _version;
+
+    /// <summary>
+    /// Create a command line tool with specified settings.
+    /// </summary>
+    public CommandLineTool(CommandLineToolSettings settings) : this(settings.Name, settings.Title, settings.UseAnsiColors)
+    {
+        Settings = settings;
+
+        BottomHelpText = settings.BottomHelpText;
+        OptionsAndArgumentsOption = settings.OptionsAndArgumentsOption;
+        ShowHelpOnNoArguments = settings.ShowHelpOnNoArguments;
+        Version = settings.Version;
+    }
 
     /// <summary>
     /// Use name of calling assembly as command line tool name.
@@ -99,14 +126,12 @@ internal abstract class CommandLineTool : ICommandLineTool
         if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException("Argument is required.", nameof(title));
 
         _name = name;
-        _title = useAnsiColors ? AnsiEscape.Apply(title, AnsiEscapeCode.Bold) : title;
+        _title = $"{_name} — {title}";
         _useAnsiColors = useAnsiColors;
 
-        CreateTool();
-        AddOptionsAndArguments();
-        AddCommands();
+        if (useAnsiColors) _title = AnsiEscape.Apply(_title, AnsiEscapeCode.Bold);
 
-        _tool.HelpOption("--help");
+        CreateTool();
     }
 
     /// <summary>
@@ -115,6 +140,8 @@ internal abstract class CommandLineTool : ICommandLineTool
     /// <returns>Exit code</returns>
     public int Run(string[] args)
     {
+        FinalizeInitialization();
+
         if (args.Length == 0 && ShowHelpOnNoArguments)
         {
             _tool.ShowHelp();
@@ -140,24 +167,32 @@ internal abstract class CommandLineTool : ICommandLineTool
     /// <summary>
     /// For a sub-command execution tool, use to create a command.
     /// </summary>
-    protected void CreateCommand(string name, string title, string topLevelHelpText, string bottomHelpText, Func<string, IEnumerable<Option>, IEnumerable<Argument>, int> execute, IEnumerable<Option>? options = null, IEnumerable<Argument>? arguments = null)
+    protected void CreateCommand(Command command) =>
+        CreateCommand(command.Name, command.Title, command.TopLevelHelpText, command.Execute, command.Options, command.Arguments, command.BottomHelpText);
+
+    /// <summary>
+    /// For a sub-command execution tool, use to create a command.
+    /// </summary>
+    protected void CreateCommand(string name, string title, string topLevelHelpText, Func<string, IEnumerable<Option>, IEnumerable<Argument>, int> execute, IEnumerable<Option>? options = null, IEnumerable<Argument>? arguments = null, string? bottomHelpText = null)
     {
         _tool.Command(name, command =>
         {
             command.Description = topLevelHelpText;
-            command.ExtendedHelpText = bottomHelpText;
             command.FullName = title;
             command.Name = name;
 
-            if (options != null) command.Options.AddRange(options);
+            if (bottomHelpText != null) command.ExtendedHelpText = bottomHelpText;
 
-            if (arguments != null)
+            if (!options.IsNullOrEmpty()) command.Options.AddRange(options);
+
+            if (!arguments.IsNullOrEmpty())
             {
                 command.Arguments.AddRange(arguments);
                 _arguments[name] = new List<Argument>(arguments);
             }
 
-            command.HelpOption("--help");
+            if (!string.IsNullOrWhiteSpace(Settings.HelpOptionTemplate)) command.HelpOption(Settings.HelpOptionTemplate);
+            if (OptionsAndArgumentsOption) command.Option("--opts-args", "Show options and arguments and exit.", CommandOptionType.NoValue);
 
             command.OnExecute(() =>
             {
@@ -177,13 +212,23 @@ internal abstract class CommandLineTool : ICommandLineTool
     /// <summary>
     /// For a top-level execution tool, override this method to add its options and arguments.
     /// </summary>
-    protected virtual (IEnumerable<Option> options, IEnumerable<Argument> arguments) CreateOptionsAndArguments() => (Array.Empty<Option>(), Array.Empty<Argument>());
+    protected virtual (IEnumerable<Option> options, IEnumerable<Argument> arguments) CreateOptionsAndArguments() => (Settings.Options, Settings.Arguments);
 
     /// <summary>
     /// For a top-level execution tool, override this method to implement its execution.
     /// </summary>
     /// <returns>Exit code</returns>
     protected virtual int Execute() => 0;
+
+    /// <summary>
+    /// For a top-level execution tool, gets its inputs which are the options and arguments. Optionally filter by <paramref name="optionPredicate"/> and/or <paramref name="argumentPredicate"/>.
+    /// </summary>
+    protected IEnumerable<ICommandLineInput> GetInputs(Func<Option, bool>? optionPredicate = null, Func<Argument, bool>? argumentPredicate = null)
+    {
+        var options = (optionPredicate == null ? Options : Options.Where(optionPredicate)).Cast<ICommandLineInput>();
+        var arguments = (argumentPredicate == null ? Arguments : Arguments.Where(argumentPredicate)).Cast<ICommandLineInput>();
+        return options.Concat(arguments);
+    }
 
     private void AddOptionsAndArguments()
     {
@@ -210,7 +255,8 @@ internal abstract class CommandLineTool : ICommandLineTool
             Error.Write("Missing or invalid argument(s). ");
         }
 
-        if (!canExecute) Error.WriteLine("Use --help for more information.");
+        if (!canExecute && !string.IsNullOrWhiteSpace(Settings.HelpOptionTemplate)) Error.WriteLine($"Use {Settings.HelpOptionTemplate} for more information.");
+        else if (!canExecute) Error.WriteLine();
 
         return canExecute;
     }
@@ -232,12 +278,40 @@ internal abstract class CommandLineTool : ICommandLineTool
                 return 1;
             }
 
-            if (CanExecute(Options, Arguments))
+            if (!CanExecute(Options, Arguments)) return 1;
+
+            if (_tool.Options.Any(o => o.Template == "opts-args" && o.HasValue()))
             {
-                try { return Execute(); }
-                catch (Exception ex) { Error.WriteLine($"{ex.GetType().Name}: {ex.Message}"); return 1; }
+                Out.WriteLine("Options:");
+                Options.ForEach(o => Out.WriteLine("  " + o.ToString()));
+                Out.WriteLine();
+                Out.WriteLine("Arguments:");
+                Arguments.ForEach(a => Out.WriteLine("  " + a.ToString()));
+                return 0;
             }
-            else return 1;
+
+            try { return Execute(); }
+            catch (Exception ex) { Error.WriteLine($"{ex.GetType().Name}: {ex.Message}"); return 1; }
         });
+    }
+
+    private void FinalizeInitialization()
+    {
+        if (_initializationFinalized) return;
+
+        if (Settings != CommandLineToolSettings.Empty)
+        {
+            if (Settings.Error != null) _tool.Error = Settings.Error;
+            if (Settings.Out != null) _tool.Out = Settings.Out;
+        }
+
+        AddOptionsAndArguments();
+        AddCommands();
+
+        if (!string.IsNullOrWhiteSpace(Settings.HelpOptionTemplate)) _tool.HelpOption(Settings.HelpOptionTemplate);
+        if (OptionsAndArgumentsOption) _tool.Option("--opts-args", "Show options and arguments and exit.", CommandOptionType.NoValue);
+        if (!string.IsNullOrWhiteSpace(_version)) _tool.VersionOption("--version", () => _version);
+
+        _initializationFinalized = true;
     }
 }

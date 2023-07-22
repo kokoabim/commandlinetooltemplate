@@ -1,6 +1,9 @@
 namespace CommandLineTools;
 
-internal enum AnsiEscapeCode : int
+/// <summary>
+/// ANSI escape codes.
+/// </summary>
+public enum AnsiEscapeCode : int
 {
     Reset = 0,
 
